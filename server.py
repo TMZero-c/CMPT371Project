@@ -94,9 +94,10 @@ def GameLoopinit(clients): # i dont remeber why i added clients param but hwtaev
     if game_stage == 1:
         # start voting and do a kick
         to_be_kicked = start_voting_sequence()
-        pass
+        eject_client(to_be_kicked, "you were voted out ig lol")
     elif game_stage > 1:
         # recursively call second_round_and_up
+        second_round_and_up(clients)
         pass
 
     # eject_client(clients[cl], "you were voted out ig lol")
@@ -106,6 +107,7 @@ def GameLoopinit(clients): # i dont remeber why i added clients param but hwtaev
 
 def second_round_and_up(clients):
     # trying to make this recursive or smth based on amnt of players left
+    print(f"its round {game_stage}!!")
     pass
 
 def handle_room_joining(client):
@@ -312,22 +314,23 @@ def start_voting_sequence():
 
     if len(top_voted) > 1:
         # start tie sequence, this is temporary
-        chosen = random.choice(top_voted)
+        chosen_name = random.choice(top_voted)
         pass
     else:
-        chosen = top_voted[0] 
-    # If tie, pick randomly (probably shouldnt do this)
-    """
-    chosen = random.choice(top_voted)
-    print(f"[VOTING RESULT] Chosen by vote: {chosen}")
+        chosen_name = top_voted[0] 
+    
 
-    for client in clients:
-        try:
-            client.send(f"\n[VOTING RESULT] The group voted for: {chosen}\n".encode())
-        except:
-            continue
-            """
-    return chosen  # You can return display name or track socket if needed
+    # Find the client corresponding to the chosen name
+    chosen_client = None
+    for client, name in clients.items():
+        if name == chosen_name:
+            chosen_client = client
+            break
+
+    print(f"[VOTING RESULT] Chosen by vote: {chosen}")
+    broadcast(f"\n[VOTING RESULT] The group voted for: {chosen}\n", None)
+        
+    return chosen_client  # returns client obj
 
 
 def server_command_listener():
