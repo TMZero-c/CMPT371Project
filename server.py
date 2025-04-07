@@ -6,45 +6,91 @@ import math
 clients = {} # key: socket obj, value: display name (string)
 rooms = {}  # key: room_id (int), value: list of clients
 
+ready_clients = set()  # stores sockets of ready clients
+ready_lock = threading.Lock()  # so we can safely modify from multiple threads
+
+clients_room_ids = {}  # socket -> room_id (assigned after game starts)
+
 def handle_client(client, addr):
     global clients
     print(f"[NEW CONNECTION] {addr} connected.")
 
     # Ask for a display name
-    client.send("Enter your display name: ".encode())
+    client.send("Enter your display name: ".encode())  
     display_name = client.recv(1024).decode().strip()
-    room_id = handle_room_joining(client)
+    # room_id = handle_room_joining(client)
     clients[client] = display_name
 
     welcome_message = f"[SERVER] {display_name} has joined the chat.\n"
     broadcast(welcome_message, client)
+
+    client.send("Enter \"ready\" when ready!, when all players are ready, the game will start\n".encode())
 
     while True:
         try:
             message = client.recv(1024)
             if not message:
                 break
+
+            decoded_message = message.decode().strip().lower()
+
+            if decoded_message == "ready":
+                with ready_lock:
+                    if client not in ready_clients:
+                        ready_clients.add(client)
+                        print(f"[READY] {display_name} is ready.")
+                        client.send("You are marked as ready.\n".encode())
+
+                    if len(ready_clients) == len(clients):
+                        GameLoopinit(clients)
+
+                        # Now let each client join a room
+                        for c in list(clients.keys()):
+                            room_id = handle_room_joining(c)
+                            clients_room_ids[c] = room_id
+                continue
+
             formatted_message = f"{display_name}: {message.decode()}\n"
             print(f"[MESSAGE] {addr}: {formatted_message.strip()}")
-            room_broadcast(formatted_message, room_id, client)
+
+            # Only broadcast to same room after rooms are assigned
+            if client in clients_room_ids:
+                room_id = clients_room_ids[client]
+                room_broadcast(formatted_message, room_id, client)
+            else:
+                client.send("Game hasn't started yet or you're not in a room.\n".encode())
+
         except:
             break
 
     print(f"[DISCONNECTED] {addr} ({display_name}) disconnected.")
     client.close()
-    del clients[client]
+    del clients[client] 
+    with ready_lock:
+        if client in ready_clients:
+            ready_clients.remove(client)
+    clients_room_ids.pop(client, None)
+    
     broadcast(f"[SERVER] {display_name} has left the chat.\n", None)
+
+
 
 def GameLoopinit(clients): # we need to make it call gameloopinit when all players are 'ready'
     topicList = ["food", "cars", "anime", "movies", "school", "trains", "shervin", "IEEE", "the state of vancouver's economy in chinese", "clothing", "canada", "computer parts", "games", "art"]
 
     print("Game Has Started!!")
-    broadcast("GAME IS STARTING", None)
+    broadcast("GAME IS STARTING!\n", None)
     # role and topic given to players
     innocentTopic = random.choice(topicList)
-    innocent = "you're in the majority, you must figure out who the impostor is. The Topic is: " + innocentTopic
-    impostor = "you're the impostor, don't get found out, the other innocents have a topic, you need to blend in"
+    innocent = "you're in the majority, you must figure out who the impostor is. The Topic is: " + innocentTopic + "\n"
+    impostor = "you're the impostor, don't get found out, the other innocents have a topic, you need to blend in \n"
     broadcast_except_random(innocent, impostor)
+
+    # start a timer or something, once its over start voting phase
+    # then use 
+    # eject_client(clients[cl], "you were voted out ig lol")
+    # to kick them
+    #then repeat GameLoopinit maybe
     
 
 def handle_room_joining(client):
@@ -114,7 +160,8 @@ def broadcast_except_random(message, impostMessage): # Used in game logic to det
     if not clients:
         return  # no clients connected
 
-    excluded_client = random.choice(list(clients))
+    excluded_client = random.choice(list(clients)) #if theres only one player, they will always be the
+    # impostor LOL
     
     for client in clients:
         if client != excluded_client:
@@ -140,6 +187,39 @@ def room_broadcast(message, room_id, sender):
                     client.close()
                     rooms[room_id].remove(client)
 
+def eject_client(client, reason=None):
+    display_name = clients.get(client, "The Game")
+
+    try:
+        if reason:
+            client.send(f"You have been ejected: {reason}\n".encode())
+        else:
+            client.send("You have been ejected from the server.\n".encode())
+    except:
+        pass  # It's okay if sending fails
+
+    print(f"[EJECTED] {display_name} has been ejected from the server.")
+
+    # Remove from room
+    for room_id, members in list(rooms.items()):
+        if client in members:
+            members.remove(client)
+            if len(members) == 0:
+                del rooms[room_id]
+
+    # Clean up tracking structures
+    with ready_lock:
+        ready_clients.discard(client)
+    clients_room_ids.pop(client, None)
+    if client in clients:
+        del clients[client]
+
+    try:
+        client.close()
+    except:
+        pass
+
+
 
 
 def start_server():
@@ -147,12 +227,14 @@ def start_server():
     server.bind(("0.0.0.0", 5555))
     server.listen()
     print("[SERVER STARTED] Listening on port 5555...")
-    GameLoopinit(clients) # this should work..
+    
 
     while True:
         client, addr = server.accept()
         # Each thread contains a client during server runtime
         threading.Thread(target=handle_client, args=(client, addr)).start()
+
+
 
 if __name__ == "__main__":
     start_server()

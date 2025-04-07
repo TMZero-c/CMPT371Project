@@ -27,7 +27,7 @@ def start_client():
 
     print("[CONNECTED] Type messages below to chat.")
     while True:
-        message = input("input: ")
+        message = input()
         if message.lower() == "exit":
             break
         client.send(message.encode())
