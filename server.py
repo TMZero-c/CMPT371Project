@@ -10,6 +10,7 @@ ready_clients = set()  # stores sockets of ready clients
 ready_lock = threading.Lock()  # so we can safely modify from multiple threads
 
 clients_room_ids = {}  # socket -> room_id (assigned after game starts)
+impostor_for_game = None
 
 def handle_client(client, addr):
     global clients
@@ -75,7 +76,7 @@ def handle_client(client, addr):
 
 
 
-def GameLoopinit(clients): # we need to make it call gameloopinit when all players are 'ready'
+def GameLoopinit(clients): # i dont remeber why i added clients param but hwtaever
     topicList = ["food", "cars", "anime", "movies", "school", "trains", "shervin", "IEEE", "the state of vancouver's economy in chinese", "clothing", "canada", "computer parts", "games", "art"]
 
     print("Game Has Started!!")
@@ -85,13 +86,17 @@ def GameLoopinit(clients): # we need to make it call gameloopinit when all playe
     innocent = "you're in the majority, you must figure out who the impostor is. The Topic is: " + innocentTopic + "\n"
     impostor = "you're the impostor, don't get found out, the other innocents have a topic, you need to blend in \n"
     broadcast_except_random(innocent, impostor)
-
+    
     # start a timer or something, once its over start voting phase
     # then use 
     # eject_client(clients[cl], "you were voted out ig lol")
     # to kick them
-    #then repeat GameLoopinit maybe
-    
+    # then repeat a modified GameLoopinit in which the impostor is already exists maybe
+    # broadcast_except_select_one(innocent, impostor, impostor_for_game)
+
+def second_round_and_up(clients):
+    # trying to make this recursive or smth based on amnt of players left
+    pass
 
 def handle_room_joining(client):
     while True:
@@ -158,10 +163,35 @@ def broadcast(message, sender):
 
 def broadcast_except_random(message, impostMessage): # Used in game logic to determine impostor 
     if not clients:
+        print("something is very wrong..")
         return  # no clients connected
 
     excluded_client = random.choice(list(clients)) #if theres only one player, they will always be the
     # impostor LOL
+    impostor_for_game = excluded_client
+    
+    for client in clients:
+        if client != excluded_client:
+            try:
+                client.send(message.encode())
+            except:
+                client.close()
+                del clients[client]
+        elif client == excluded_client:
+            try:
+                client.send(impostMessage.encode())
+            except:
+                client.close()
+                del clients[client]
+    return impostor_for_game
+
+def broadcast_except_select_one(message, impostMessage, impostClient): # Used in game logic to determine impostor 
+    if not clients:
+        print("something is very wrong..")
+        return  # no clients connected
+
+    excluded_client = impostClient
+    # this should be round 2+ stuff
     
     for client in clients:
         if client != excluded_client:
