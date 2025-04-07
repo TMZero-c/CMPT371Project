@@ -12,6 +12,8 @@ ready_lock = threading.Lock()  # so we can safely modify from multiple threads
 clients_room_ids = {}  # socket -> room_id (assigned after game starts)
 impostor_for_game = None
 
+game_stage = 0
+
 def handle_client(client, addr):
     global clients
     print(f"[NEW CONNECTION] {addr} connected.")
@@ -88,7 +90,15 @@ def GameLoopinit(clients): # i dont remeber why i added clients param but hwtaev
     broadcast_except_random(innocent, impostor)
     
     # start a timer or something, once its over start voting phase
-    # then use 
+    # then use forcestage to bypass timer
+    if game_stage == 1:
+        # start voting and do a kick
+        to_be_kicked = start_voting_sequence()
+        pass
+    elif game_stage > 1:
+        # recursively call second_round_and_up
+        pass
+
     # eject_client(clients[cl], "you were voted out ig lol")
     # to kick them
     # then repeat a modified GameLoopinit in which the impostor is already exists maybe
@@ -249,6 +259,118 @@ def eject_client(client, reason=None):
     except:
         pass
 
+def start_voting_sequence():
+    print("[VOTING] Voting sequence has started.")
+    
+    # 1. Remove all clients from rooms
+    for client in clients:
+        clients_room_ids.pop(client, None)
+    rooms.clear()
+
+    # 2. Notify players
+    for client in clients:
+        try:
+            client.send("\n[VOTING] Discussion is over. Time to vote!\n".encode())
+            client.send("Type the display name of the person you think is the impostor:\n".encode())
+        except:
+            continue
+
+    # 3. Collect votes
+    votes = {}
+    vote_lock = threading.Lock()
+    vote_event = threading.Event()
+
+    def collect_vote(client):
+        try:
+            vote = client.recv(1024).decode().strip()
+            with vote_lock:
+                votes[vote] = votes.get(vote, 0) + 1
+            client.send(f"[VOTING] You voted for: {vote}\n".encode())
+        except:
+            pass
+        finally:
+            vote_event.set()
+
+    threads = []
+    for client in list(clients.keys()):
+        t = threading.Thread(target=collect_vote, args=(client,))
+        t.start()
+        threads.append(t)
+
+    # 4. Wait for all votes to come in or timeout (e.g., 30 seconds)
+    timeout = 30
+    for t in threads:
+        t.join(timeout=timeout)
+
+    # 5. Tally votes
+    if not votes:
+        print("[VOTING] No votes were cast.")
+        return None
+
+    max_votes = max(votes.values())
+    top_voted = [name for name, count in votes.items() if count == max_votes]
+
+    if len(top_voted) > 1:
+        # start tie sequence, this is temporary
+        chosen = random.choice(top_voted)
+        pass
+    else:
+        chosen = top_voted[0] 
+    # If tie, pick randomly (probably shouldnt do this)
+    """
+    chosen = random.choice(top_voted)
+    print(f"[VOTING RESULT] Chosen by vote: {chosen}")
+
+    for client in clients:
+        try:
+            client.send(f"\n[VOTING RESULT] The group voted for: {chosen}\n".encode())
+        except:
+            continue
+            """
+    return chosen  # You can return display name or track socket if needed
+
+
+def server_command_listener():
+    while True:
+        cmd = input(">> ").strip().lower()
+
+        if cmd == "list":
+            print(f"[SERVER] Connected clients: {len(clients)}")
+            for client, name in clients.items():
+                print(f"- {name}")
+        
+        elif cmd.startswith("eject "):
+            name_to_kick = cmd.split(" ", 1)[1]
+            found = False
+            for client, name in list(clients.items()):
+                if name.lower() == name_to_kick.lower():
+                    eject_client(client, "You were kicked by the server.")
+                    found = True
+                    break
+            if not found:
+                print(f"[SERVER] No client with name '{name_to_kick}' found.")
+        
+        elif cmd == "rooms":
+            print("[SERVER] Current rooms and occupants:")
+            for room_id, members in rooms.items():
+                names = [clients.get(c, "Unknown") for c in members]
+                print(f"Room {room_id}: {', '.join(names)}")
+        
+        elif cmd == "help":
+            print("Available commands:")
+            print("  list           - Show connected clients")
+            print("  eject [name]   - Kick client by display name")
+            print("  rooms          - Show room status")
+            print("  help           - Show this help message")
+
+        elif cmd == "forcestage":
+            game_stage += 1
+            print("forcing gamestage!! \n gamestage now: " + game_stage + "\n")
+
+
+        else:
+            print("[SERVER] Unknown command. Type 'help' for options.")
+
 
 
 
@@ -257,6 +379,8 @@ def start_server():
     server.bind(("0.0.0.0", 5555))
     server.listen()
     print("[SERVER STARTED] Listening on port 5555...")
+    threading.Thread(target=server_command_listener, daemon=True).start()
+
     
 
     while True:
