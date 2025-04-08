@@ -14,6 +14,22 @@
 - voting occurs to determine impostor
 - repeat until either impostor remains within 2 players or impostor is voted out
 
+
+## TO PLAY
+
+- Someone starts the server
+- Clients join
+- Game start when all clients have typed ready
+
+
+## bugs that may be there
+
+- room allocation is not updateing correctly
+- people can't join
+- end_game ends the game sloppily
+- game_stage must be forced to start voting_sequence
+- other random stuff
+
 probably..
 
 i think this is how it goes

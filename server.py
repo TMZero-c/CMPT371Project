@@ -2,6 +2,7 @@ import socket
 import threading
 import random
 import math
+import time
 
 clients = {} # key: socket obj, value: display name (string)
 rooms = {}  # key: room_id (int), value: list of clients
@@ -13,6 +14,7 @@ clients_room_ids = {}  # socket -> room_id (assigned after game starts)
 impostor_for_game = None
 
 game_stage = 0
+topicList = ["food", "cars", "anime", "movies", "school", "trains", "shervin", "IEEE", "the state of vancouver's economy in chinese", "clothing", "canada", "computer parts", "games", "art"]
 
 def handle_client(client, addr):
     global clients
@@ -79,7 +81,6 @@ def handle_client(client, addr):
 
 
 def GameLoopinit(clients): # i dont remeber why i added clients param but hwtaever
-    topicList = ["food", "cars", "anime", "movies", "school", "trains", "shervin", "IEEE", "the state of vancouver's economy in chinese", "clothing", "canada", "computer parts", "games", "art"]
 
     print("Game Has Started!!")
     broadcast("GAME IS STARTING!\n", None)
@@ -88,27 +89,130 @@ def GameLoopinit(clients): # i dont remeber why i added clients param but hwtaev
     innocent = "you're in the majority, you must figure out who the impostor is. The Topic is: " + innocentTopic + "\n"
     impostor = "you're the impostor, don't get found out, the other innocents have a topic, you need to blend in \n"
     broadcast_except_random(innocent, impostor)
-    
+
+    '''
     # start a timer or something, once its over start voting phase
     # then use forcestage to bypass timer
     if game_stage == 1:
         # start voting and do a kick
         to_be_kicked = start_voting_sequence()
         eject_client(to_be_kicked, "you were voted out ig lol")
+        # then check if impostor is dead or not
+        if impostor_for_game == None:
+            print("innocent wins!")
+            end_game()
+            # end game and reset everything
     elif game_stage > 1:
         # recursively call second_round_and_up
         second_round_and_up(clients)
         pass
 
-    # eject_client(clients[cl], "you were voted out ig lol")
-    # to kick them
     # then repeat a modified GameLoopinit in which the impostor is already exists maybe
     # broadcast_except_select_one(innocent, impostor, impostor_for_game)
+    '''
 
-def second_round_and_up(clients):
-    # trying to make this recursive or smth based on amnt of players left
-    print(f"its round {game_stage}!!")
-    pass
+def game_state_listener():
+    global game_stage
+
+    print("[GAME STATE LISTENER] Started monitoring game_stage.")
+    previous_stage = game_stage  # Keep track of the last known game stage
+
+    while True:
+        if game_stage != previous_stage:  # Check if game_stage has changed
+            print(f"[GAME STATE] Detected change in game_stage: {game_stage}")
+
+            if game_stage == 1:
+                # Start voting and eject a player
+                to_be_kicked = start_voting_sequence()
+                if to_be_kicked:
+                    eject_client(to_be_kicked, "You were voted out!")
+                # Check if the impostor is dead
+                if impostor_for_game is None:
+                    print("Innocents win!")
+                    end_game()
+                else:
+                    print("Game continues to the next round.")
+
+            elif game_stage > 1:
+                # Handle subsequent rounds
+                print(f"its round {game_stage}!!")
+                print("wahoo!!!!")
+
+                
+                innocent2 = "you're still in the majority, you must figure out who the impostor is. The Topic is: " + innocentTopic + "\n"
+                impostor2 = "you're still the impostor! don't get found out, the other innocents have a topic, you need to blend in. Good luck \n"
+                if game_stage % 2 == 0: # even stage, talking round
+                    innocentTopic = random.choice(topicList)
+                    print("continuing game, round: " + str(game_stage))
+                    broadcast_except_select_one(innocent2, impostor2, impostor_for_game)
+
+                if game_stage % 2 is not 0: # odd stage, voting round
+
+                    # Start voting and eject a player
+                    to_be_kicked = start_voting_sequence()
+                    if to_be_kicked:
+                        eject_client(to_be_kicked, "You were voted out!")
+
+
+                    if len(clients) == 2 and impostor_for_game is not None: # amount of players is 2, and impostor still alive
+                        # impostor wins and end game
+                        print("impostor wins!")
+                        end_game()
+                    elif impostor_for_game == None: #impostor is dead
+                        # innocent wins and end game
+                        print("innocent wins!")
+                        end_game()
+                    else:
+                        #continue game let players go back into rooms.
+                        # then start voting seqence again until other conditions are met.
+                        broadcast("the impostor still lies among us...\n", None)
+                        game_stage += 1 # increment game stage to continue the game
+
+                        
+                        
+
+            # Update the previous stage
+            previous_stage = game_stage
+
+        # Add a small delay to avoid busy-waiting
+        time.sleep(0.1)
+
+
+
+def end_game():
+    global game_stage, impostor_for_game, clients_room_ids, rooms, ready_clients
+
+    print("[GAME END] Ending the game and resetting the server state.")
+
+    # Reset game stage
+    game_stage = 0
+
+    # Clear impostor and room-related data
+    impostor_for_game = None
+    clients_room_ids.clear()
+    rooms.clear()
+
+    # Reset ready clients
+    with ready_lock:
+        ready_clients.clear()
+
+    # Notify all clients that the game has ended
+    for client in list(clients.keys()):
+        try:
+            client.send("[SERVER] The game has ended. Waiting for all players to be ready again.\n".encode())
+        except:
+            client.close()
+            del clients[client]
+
+    # Restart the ready check
+    for client in list(clients.keys()):
+        try:
+            client.send("Enter \"ready\" when ready to start a new game.\n".encode())
+        except:
+            client.close()
+            del clients[client]
+
+    print("[GAME RESET] Game state has been reset. Waiting for players to be ready.")
 
 def handle_room_joining(client):
     while True:
@@ -163,7 +267,6 @@ def kick_client_from_room(client):
             client.close()
 
 
-
 def broadcast(message, sender):
     for client in clients:
         if client != sender:
@@ -178,7 +281,7 @@ def broadcast_except_random(message, impostMessage): # Used in game logic to det
         print("something is very wrong..")
         return  # no clients connected
 
-    excluded_client = random.choice(list(clients)) #if theres only one player, they will always be the
+    excluded_client = random.choice(list(clients.keys())) #if theres only one player, they will always be the
     # impostor LOL
     impostor_for_game = excluded_client
     
@@ -248,6 +351,11 @@ def eject_client(client, reason=None):
             members.remove(client)
             if len(members) == 0:
                 del rooms[room_id]
+
+    # if they are impostor, clean impostor
+    if client == impostor_for_game:
+        impostor_for_game = None
+        print("[IMPOSTOR EJECTED] The impostor has been ejected.")
 
     # Clean up tracking structures
     with ready_lock:
@@ -327,8 +435,8 @@ def start_voting_sequence():
             chosen_client = client
             break
 
-    print(f"[VOTING RESULT] Chosen by vote: {chosen}")
-    broadcast(f"\n[VOTING RESULT] The group voted for: {chosen}\n", None)
+    print(f"[VOTING RESULT] Chosen by vote: {chosen_client}")
+    broadcast(f"\n[VOTING RESULT] The group voted for: {chosen_client}\n", None)
         
     return chosen_client  # returns client obj
 
@@ -367,8 +475,9 @@ def server_command_listener():
             print("  help           - Show this help message")
 
         elif cmd == "forcestage":
-            game_stage += 1
-            print("forcing gamestage!! \n gamestage now: " + game_stage + "\n")
+            with ready_lock:  # Use a lock to ensure thread safety
+                game_stage += 1
+            print(f"[SERVER] Forcing game stage! New game_stage: {game_stage}")
 
 
         else:
@@ -382,9 +491,12 @@ def start_server():
     server.bind(("0.0.0.0", 5555))
     server.listen()
     print("[SERVER STARTED] Listening on port 5555...")
-    threading.Thread(target=server_command_listener, daemon=True).start()
 
-    
+    # Start the game state listener in a separate thread
+    threading.Thread(target=game_state_listener, daemon=True).start()
+
+    # Start the server command listener in a separate thread
+    threading.Thread(target=server_command_listener, daemon=True).start()
 
     while True:
         client, addr = server.accept()
