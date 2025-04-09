@@ -1,6 +1,14 @@
 # some kind of social deduction impostor among us sus game
 ### we really need to work on this since we have to write a report and record a demo video
 
+## things we still need to do
+- display messages for each game state for better user experience
+- add ability to have more players (with multithreading)
+- fix bugs
+- any other fixes or features or anything to complete
+
+
+
 ## what we're meant to do
 
 - server starts and clients conect
@@ -29,6 +37,7 @@
 - end_game ends the game sloppily
 - game_stage must be forced to start voting_sequence
 - other random stuff
+
 
 probably..
 
