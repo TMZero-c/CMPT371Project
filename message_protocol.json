@@ -1,0 +1,45 @@
+{
+    "JOIN_ROOM": {
+      "fields": ["player_name"]
+    },
+    "ROOM_JOINED": {
+      "fields": ["room_id", "players"]
+    },
+    "ASSIGN_ROLE": {
+    "fields": ["role", "topic"]
+    },
+    "GAME_STARTED": {
+      "fields": ["players"]
+    },
+    "VOTE": {
+      "fields": ["target"]
+    },
+    "VOTE_RESULT": {
+      "fields": ["eliminated"]
+    },
+    "END_GAME": {
+      "fields": ["winner"]
+    },
+    "PING": {
+      "fields": []
+    },
+    "PONG": {
+      "fields": []
+    },
+    "INFO": {
+      "fields": ["message"]
+    },
+    "READY": {
+      "fields": []
+    },
+    "ALL_READY": {
+      "fields": []
+    },
+    "CHAT": {
+      "fields": ["message", "room_id"]
+    },
+    "MAIN_ROOM": {
+      "fields": ["players"]
+    }
+  }
+  
