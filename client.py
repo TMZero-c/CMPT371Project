@@ -1,3 +1,4 @@
+# merged_client.py
 import socket
 import threading
 import json
@@ -22,51 +23,58 @@ def handle_server_messages(sock):
         try:
             data = sock.recv(1024)
             if not data:
-                print("Disconnected from server.")
+                print("[DISCONNECTED] Server closed connection.")
                 break
             msg = parse_message(data)
             if not msg:
                 continue
 
-            msg_type = msg["type"]
-
-            # Display all messages
-            if msg_type in ["ROOM_JOINED", "ASSIGN_ROLE", "GAME_STARTED",
-                            "MAIN_ROOM", "VOTE_RESULT", "END_GAME", "INFO"]:
-                print(msg)
+            msg_type = msg.get("type")
+            if msg_type == "INFO":
+                print(msg.get("message", ""))
+            elif msg_type == "ASSIGN_ROLE":
+                print(f"\n[ROLE] You are the {msg['role']}. Topic: {msg['topic']}")
+            elif msg_type == "ROOM_JOINED":
+                print(f"[JOINED] Room: {msg['room_id']}, Players: {msg['players']}")
+            elif msg_type == "GAME_STARTED":
+                print("[GAME] Game started with players:", ", ".join(msg["players"]))
+            elif msg_type == "VOTE_RESULT":
+                print(f"\n[VOTE RESULT] {msg['ejected_player']} was ejected!")
+            elif msg_type == "END_GAME":
+                print(f"\n[GAME OVER] {msg['winner'].capitalize()} win!")
             elif msg_type == "PONG":
-                print("✅ Server responded with PONG")
+                print("✅ Pong received from server")
         except Exception as e:
             print("Error receiving message:", e)
             break
 
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(('localhost', 5555))
+    sock.connect(('localhost', 5555))  # Change to server IP if needed
 
-    name = input("Enter your name: ")
+    name = input("Enter your display name: ")
     sock.send(create_message("JOIN_ROOM", player_name=name))
 
     threading.Thread(target=handle_server_messages, args=(sock,), daemon=True).start()
 
     while True:
         try:
-            cmd = input("> ").strip()
+            cmd = input("\n> ").strip()
             if cmd == "ready":
                 sock.send(create_message("READY"))
             elif cmd.startswith("chat "):
                 msg = cmd[5:]
-                sock.send(create_message("CHAT", message=msg, room_id="current"))
+                sock.send(create_message("CHAT", message=msg, room_id="ROOM1"))
             elif cmd.startswith("vote "):
                 target = cmd.split(" ")[1]
                 sock.send(create_message("VOTE", target=target))
             elif cmd == "ping":
                 sock.send(create_message("PING"))
             elif cmd == "exit":
-                print("Exiting...")
+                print("Exiting game.")
                 break
             else:
-                print("Unknown command.")
+                print("Unknown command. Try: ready, chat <msg>, vote <name>, ping, exit")
         except KeyboardInterrupt:
             break
 
