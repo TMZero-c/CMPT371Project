@@ -5,6 +5,13 @@ import json
 import random
 import time
 
+# getting the hostname by socket.gethostname() method
+hostname = socket.gethostname()
+
+# getting the IP address using socket.gethostbyname() method
+ip_address = socket.gethostbyname(hostname)
+
+
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
 
