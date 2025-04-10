@@ -15,6 +15,10 @@ ready_clients = set()
 clients_room_ids = {}
 impostor_for_game = None
 game_stage = 0
+DISCUSSION_TIME = 30  # seconds
+votes = {}  # player_name -> vote_target
+round_active = False
+
 
 lock = threading.Lock()
 ready_lock = threading.Lock()
@@ -115,8 +119,17 @@ def handle_client(conn, addr):
                     conn.send(create_message("INFO", message="You're not in a room."))
 
             elif msg_type == "VOTE":
-                sender = clients.get(conn, "Unknown")
-                broadcast(create_message("INFO", message=f"{sender} voted."))
+                if not round_active:
+                    sender = clients.get(conn)
+                    target = message.get("target")
+                    if target in clients.values():
+                        votes[sender] = target
+                        conn.send(create_message("INFO", message=f"You voted for {target}."))
+                    else:
+                        conn.send(create_message("INFO", message="Invalid vote target."))
+                else:
+                    conn.send(create_message("INFO", message="You can't vote during room discussions."))
+
 
             elif msg_type == "PING":
                 conn.send(create_message("PONG"))
@@ -144,7 +157,71 @@ def start_game():
     # Ask each player to choose a room
     max_rooms = math.ceil(len(clients) / 2)
     for conn in clients:
-        conn.send(create_message("INFO", message=f"Choose a room number (1 to {max_rooms}) with command: vote <room_number>"))
+        conn.send(create_message("INFO", message=f"Choose a room number (1 to {max_rooms}) with command: join <room_number>"))
+
+    global round_active
+    round_active = True
+    broadcast(create_message("INFO", message=f"Room discussion time: {DISCUSSION_TIME} seconds..."))
+    time.sleep(DISCUSSION_TIME)
+    end_room_phase()
+
+def check_game_end(eliminated_name):
+    global impostor_for_game
+
+    if eliminated_name:
+        # Remove eliminated player
+        eliminated_conn = None
+        for conn, name in clients.items():
+            if name == eliminated_name:
+                eliminated_conn = conn
+                break
+        if eliminated_conn:
+            clients.pop(eliminated_conn, None)
+            eliminated_conn.close()
+
+    if eliminated_name and clients.get(impostor_for_game) == eliminated_name:
+        broadcast(create_message("END_GAME", winner="crewmates"))
+    elif len(clients) <= 2:
+        broadcast(create_message("END_GAME", winner="impostor"))
+    else:
+        time.sleep(2)
+        start_game()  # Start new round
+
+
+def end_room_phase():
+    global rooms, clients_room_ids, round_active
+    broadcast(create_message("INFO", message="Discussion time over. Returning to main room."))
+    
+    rooms.clear()
+    clients_room_ids.clear()
+
+    for conn in clients:
+        conn.send(create_message("INFO", message="You're now in the main room. You may vote using: vote <name>"))
+    
+    round_active = False
+    collect_votes()
+
+
+def collect_votes():
+    global votes
+    votes = {}
+    broadcast(create_message("INFO", message="Please vote for who you think is the impostor."))
+    
+    # Wait 20 seconds for votes
+    time.sleep(20)
+
+    vote_counts = {}
+    for target in votes.values():
+        vote_counts[target] = vote_counts.get(target, 0) + 1
+
+    if not vote_counts:
+        broadcast(create_message("INFO", message="No votes cast. Nobody is eliminated."))
+        check_game_end(None)
+        return
+
+    eliminated = max(vote_counts.items(), key=lambda x: x[1])[0]
+    broadcast(create_message("VOTE_RESULT", voted_out=eliminated))
+    check_game_end(eliminated)
 
 def run_server():
     print("clients use this to join:", socket.gethostbyname(socket.gethostname()))
