@@ -35,7 +35,7 @@
   "INFO": {
     "fields": ["message"]
   },
-  "JOIN_SPECIFIC_ROOM": {
+  "JOIN": {  
     "fields": ["room_id"]
   },
   "LOBBY_JOINED": {

@@ -11,7 +11,7 @@ from PyQt5.QtCore import pyqtSignal, QObject
 
 '''
 
-Did you know that the critically acclaimed MMORPG Final Fantasy XIV has a free trial, and includes thee ntirety of A Realm Reborn AND the award-winning Heavensward and Stormblood expansions up to level 70 with no restrictions on playtime? Sign up, and enjoy Eorzea today!
+Did you know that the critically acclaimed MMORPG Final Fantasy XIV has a free trial, and includes the entirety of A Realm Reborn AND the award-winning Heavensward and Stormblood expansions up to level 70 with no restrictions on playtime? Sign up, and enjoy Eorzea today!
 
 
 '''
@@ -134,12 +134,12 @@ class GameClient(QWidget):
 
         if text.startswith("chat "):
             self.sock.send(create_message("CHAT", message=text[5:], room_id="current"))
-        elif text.startswith("vote "):
+        elif text.startswith("join "):  # Updated command for joining rooms
             value = text.split(" ", 1)[1]
             if value.isdigit():
-                self.sock.send(create_message("JOIN_SPECIFIC_ROOM", room_id=int(value)))
+                self.sock.send(create_message("JOIN", room_id=int(value)))
             else:
-                self.sock.send(create_message("VOTE", target=value))
+                self.display_message("Invalid room number. Use: join <room_number>")
         elif text == "ping":
             self.sock.send(create_message("PING"))
         elif text == "exit":
@@ -153,13 +153,14 @@ class GameClient(QWidget):
     def send_command(self, cmd):
         if cmd == "READY":
             self.sock.send(create_message("READY"))
+            self.display_message("You are now marked as ready.")
 
     def show_help(self):
         help_text = (
             "Available commands:\n"
             "  chat <message>     - Send a chat message to your room\n"
-            "  vote <name>        - Vote for a player (during voting)\n"
-            "  vote <room_num>    - Join a specific room (after game starts)\n"
+            "  join <room_num>    - Join a specific room\n"
+            "  ready              - Mark yourself as ready\n"
             "  ping               - Ping the server\n"
             "  exit               - Disconnect and exit\n"
         )

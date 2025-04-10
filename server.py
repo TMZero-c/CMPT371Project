@@ -95,27 +95,16 @@ def handle_client(conn, addr):
                                                   message=f"Welcome to the lobby, {player_name}!"))
                         broadcast(create_message("INFO", message=f"{player_name} joined."), exclude=conn)
 
-            elif msg_type == "JOIN_LOBBY":
-                with lock:
-                    # If the client is in a game room, remove them from that room
-                    current_room = clients_room_ids.get(conn)
-                    if isinstance(current_room, int):  
-                        if current_room in rooms and conn in rooms[current_room]:
-                            rooms[current_room].remove(conn)
-                    # Add them to lobby if not already there
-                    if conn not in lobby_clients:
-                        lobby_clients.append(conn)
-                    clients_room_ids[conn] = "lobby"
-                    conn.send(create_message("LOBBY_JOINED", message="You have rejoined the lobby."))
-
             elif msg_type == "READY":
                 with ready_lock:
                     ready_clients.add(conn)
                     broadcast(create_message("INFO", message=f"{clients[conn]} is ready."))
+                    # Start the game if all clients are ready
                     if len(ready_clients) == len(clients):
                         threading.Thread(target=start_game, daemon=True).start()
 
-            elif msg_type == "JOIN_SPECIFIC_ROOM":
+            elif msg_type == "JOIN":
+                # Handle joining a specific room
                 room_id = message.get("room_id")
                 if not isinstance(room_id, int):
                     conn.send(create_message("INFO", message="Invalid room number."))
@@ -145,19 +134,6 @@ def handle_client(conn, addr):
                     room_broadcast(create_message("INFO", message=f"{sender}: {content}"), room_id, conn)
                 else:
                     conn.send(create_message("INFO", message="You're not in a valid room."))
-
-            elif msg_type == "VOTE":
-                if not round_active:
-                    sender = clients.get(conn)
-                    target = message.get("target")
-                    if target in clients.values():
-                        votes[sender] = target
-                        conn.send(create_message("INFO", message=f"You voted for {target}."))
-                    else:
-                        conn.send(create_message("INFO", message="Invalid vote target."))
-                else:
-                    conn.send(create_message("INFO", message="You can't vote during room discussions."))
-
 
             elif msg_type == "PING":
                 conn.send(create_message("PONG"))
