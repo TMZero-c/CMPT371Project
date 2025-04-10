@@ -95,6 +95,19 @@ def handle_client(conn, addr):
                                                   message=f"Welcome to the lobby, {player_name}!"))
                         broadcast(create_message("INFO", message=f"{player_name} joined."), exclude=conn)
 
+            elif msg_type == "JOIN_LOBBY":
+                with lock:
+                    # Remove the client from any room they are in
+                    current_room = clients_room_ids.get(conn)
+                    if isinstance(current_room, int) and current_room in rooms:
+                        if conn in rooms[current_room]:
+                            rooms[current_room].remove(conn)
+                    # Add the client back to the lobby
+                    if conn not in lobby_clients:
+                        lobby_clients.append(conn)
+                    clients_room_ids[conn] = "lobby"
+                    conn.send(create_message("LOBBY_JOINED", message="You have rejoined the lobby."))
+
             elif msg_type == "READY":
                 with ready_lock:
                     ready_clients.add(conn)
@@ -201,14 +214,22 @@ def check_game_end(eliminated_name):
 
 def end_room_phase():
     global rooms, clients_room_ids, round_active
-    broadcast(create_message("INFO", message="Discussion time over. Returning to main room."))
+    broadcast(create_message("INFO", message="Discussion time over. Returning to the lobby."))
     
+    # Clear all rooms and reset client room assignments
     rooms.clear()
     clients_room_ids.clear()
 
+    # Broadcast JOIN_LOBBY to all clients
     for conn in clients:
-        conn.send(create_message("INFO", message="You're now in the main room. You may vote using: vote <name>"))
-    
+        conn.send(create_message("JOIN_LOBBY"))
+
+    # Add all clients back to the lobby
+    with lock:
+        lobby_clients.extend(clients.keys())
+        for conn in clients:
+            clients_room_ids[conn] = "lobby"
+
     round_active = False
     collect_votes()
 
@@ -235,9 +256,10 @@ def collect_votes():
     check_game_end(eliminated)
 
 def broadcast_except_one(common_msg, impostor):
-    for client in list(clients):
+    impostor_name = clients.get(impostor)  # Get the impostor's name
+    for client, player_name in list(clients.items()):
         try:
-            if client == impostor:
+            if player_name == impostor_name:  # Compare by player name
                 client.send(create_message("ASSIGN_ROLE", role="impostor", topic="(none)"))
             else:
                 client.send(create_message("ASSIGN_ROLE", role="crewmate", topic=common_msg))

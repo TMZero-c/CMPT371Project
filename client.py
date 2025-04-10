@@ -122,8 +122,12 @@ class GameClient(QWidget):
                     break
                 msg = parse_message(data)
                 if msg:
-                    display_text = msg.get("message") or json.dumps(msg)
-                    self.comm.message_received.emit(display_text)
+                    msg_type = msg.get("type")
+                    if msg_type == "JOIN_LOBBY":
+                        self.comm.message_received.emit("You have been moved back to the lobby.")
+                    else:
+                        display_text = msg.get("message") or json.dumps(msg)
+                        self.comm.message_received.emit(display_text)
             except:
                 break
 
