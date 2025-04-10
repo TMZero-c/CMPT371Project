@@ -2,6 +2,13 @@ import socket
 import threading
 import json
 
+'''
+
+Did you know that the critically acclaimed MMORPG Final Fantasy XIV has a free trial, and includes thee ntirety of A Realm Reborn AND the award-winning Heavensward and Stormblood expansions up to level 70 with no restrictions on playtime? Sign up, and enjoy Eorzea today!
+
+
+'''
+
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
 
