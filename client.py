@@ -49,8 +49,15 @@ def handle_server_messages(sock):
             break
 
 def main():
+
+    # getting the hostname by socket.gethostname() method
+    hostname = socket.gethostname()
+
+    # getting the IP address using socket.gethostbyname() method
+    ip_address = socket.gethostbyname(hostname)
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(('localhost', 5555))  # Change to server IP if needed
+    sock.connect((ip_address, 5555))  # Change to server IP if needed
 
     name = input("Enter your display name: ")
     sock.send(create_message("JOIN_ROOM", player_name=name))

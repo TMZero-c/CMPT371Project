@@ -5,6 +5,13 @@ import json
 import random
 import time
 
+# getting the hostname by socket.gethostname() method
+hostname = socket.gethostname()
+
+# getting the IP address using socket.gethostbyname() method
+ip_address = socket.gethostbyname(hostname)
+
+
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
 
@@ -31,7 +38,7 @@ def parse_message(data):
         return None
 
 class GameServer:
-    def __init__(self, host='localhost', port=5555, max_players=2):
+    def __init__(self, host=ip_address, port=5555, max_players=2):
         self.host = host
         self.port = port
         self.max_players = max_players
