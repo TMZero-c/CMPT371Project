@@ -1,8 +1,9 @@
-# some kind of social deduction impostor among us sus game
-### we really need to work on this since we have to write a report and record a demo video
+# Blend In
 
-## what we're meant to do
+## DESCRIPTION
+Blend In is a real-time multiplayer social deduction game inspired by Among Us. In this game, players are randomly assigned a role, and must go through a series of timed discussions to identify who is secretly the Imposter.
 
+## HOW DOES IT WORK? 
 - server starts and clients conect
 - ask for name from clients
 - everyone readies up after inputting name
@@ -16,21 +17,7 @@
 
 
 ## TO PLAY
-
 - Someone starts the server
-- Clients join
-- Game start when all clients have typed ready
+- Players starting 'clients.py' will be asked for IP and Name
+- The game starts when all clients have pressed ready
 
-
-## bugs that may be there
-
-- room allocation is not updateing correctly
-- people can't join
-- end_game ends the game sloppily
-- game_stage must be forced to start voting_sequence
-- other random stuff
-
-probably..
-
-i think this is how it goes
-divulge any questions to the group chat
