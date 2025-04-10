@@ -1,3 +1,4 @@
+# Merged version of client.py with support for room selection and in-game help
 import socket
 import threading
 import json
@@ -39,6 +40,16 @@ def handle_server_messages(sock):
             print("Error receiving message:", e)
             break
 
+def print_help():
+    print("\nAvailable commands:")
+    print("  ready              - Mark yourself as ready")
+    print("  chat <message>     - Send a chat message to your room")
+    print("  vote <name>        - Vote for a player (during voting)")
+    print("  join <room_num>    - Join a specific room (after game starts)")
+    print("  ping               - Ping the server")
+    print("  help               - Show this help message")
+    print("  exit               - Disconnect and exit\n")
+
 def main():
     ip_address = input("Enter server IP address: ")
     if not ip_address:
@@ -61,16 +72,21 @@ def main():
             elif cmd.startswith("chat "):
                 msg = cmd[5:]
                 sock.send(create_message("CHAT", message=msg, room_id="current"))
-            elif cmd.startswith("vote "):
-                target = cmd.split(" ", 1)[1]
-                sock.send(create_message("VOTE", target=target))
+            elif cmd.startswith("join"):
+                value = cmd.split(" ", 1)[1]
+                if value.isdigit():
+                    sock.send(create_message("JOIN_SPECIFIC_ROOM", room_id=int(value)))
+                else:
+                    sock.send(create_message("VOTE", target=value))
             elif cmd == "ping":
                 sock.send(create_message("PING"))
+            elif cmd == "help":
+                print_help()
             elif cmd == "exit":
                 print("Exiting...")
                 break
             else:
-                print("Unknown command.")
+                print("Unknown command. Type 'help' for options.")
         except KeyboardInterrupt:
             break
 

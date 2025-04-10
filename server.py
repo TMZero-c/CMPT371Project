@@ -1,4 +1,4 @@
-# Merged server.py combining protocol design and full game logic
+# Merged server.py combining protocol design and full game logic with room selection
 import socket
 import threading
 import json
@@ -90,14 +90,31 @@ def handle_client(conn, addr):
                     if len(ready_clients) == len(clients):
                         threading.Thread(target=start_game, daemon=True).start()
 
-            elif msg_type == "CHAT":
+            elif msg_type == "JOIN_SPECIFIC_ROOM":
                 room_id = message.get("room_id")
+                if not isinstance(room_id, int):
+                    conn.send(create_message("INFO", message="Invalid room number."))
+                    continue
+                with lock:
+                    if room_id not in rooms:
+                        rooms[room_id] = []
+                    if len(rooms[room_id]) >= 2:
+                        conn.send(create_message("INFO", message="Room is full. Choose another."))
+                    else:
+                        rooms[room_id].append(conn)
+                        clients_room_ids[conn] = room_id
+                        conn.send(create_message("INFO", message=f"Joined room {room_id}"))
+
+            elif msg_type == "CHAT":
+                room_id = clients_room_ids.get(conn)
                 content = message.get("message")
                 sender = clients.get(conn, "Unknown")
-                room_broadcast(create_message("INFO", message=f"{sender}: {content}"), room_id, conn)
+                if room_id:
+                    room_broadcast(create_message("INFO", message=f"{sender}: {content}"), room_id, conn)
+                else:
+                    conn.send(create_message("INFO", message="You're not in a room."))
 
             elif msg_type == "VOTE":
-                # TODO: hook into existing vote logic
                 sender = clients.get(conn, "Unknown")
                 broadcast(create_message("INFO", message=f"{sender} voted."))
 
@@ -123,23 +140,11 @@ def start_game():
 
     broadcast_except_one(topic, "(none)", impostor_for_game)
     broadcast(create_message("GAME_STARTED", players=list(clients.values())))
-    assign_rooms()
 
-def assign_rooms():
-    room_id = 1
-    members = []
-    for client in clients:
-        members.append(client)
-        if len(members) == 2:
-            rooms[room_id] = members.copy()
-            for c in members:
-                clients_room_ids[c] = room_id
-            room_id += 1
-            members.clear()
-    if members:
-        rooms[room_id] = members
-        for c in members:
-            clients_room_ids[c] = room_id
+    # Ask each player to choose a room
+    max_rooms = math.ceil(len(clients) / 2)
+    for conn in clients:
+        conn.send(create_message("INFO", message=f"Choose a room number (1 to {max_rooms}) with command: vote <room_number>"))
 
 def run_server():
     print("clients use this to join:", socket.gethostbyname(socket.gethostname()))
