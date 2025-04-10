@@ -488,7 +488,7 @@ def server_command_listener():
 
 def start_server():
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(("0.0.0.0", 5555))
+    server.bind(('', 5555))
     server.listen()
     print("[SERVER STARTED] Listening on port 5555...")
 
