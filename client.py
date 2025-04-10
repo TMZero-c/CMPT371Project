@@ -13,24 +13,12 @@ def receive_messages(client):
             break
 
 def discover_server(port=5555):
-    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    udp.settimeout(5)
-
-    try:
-        udp.sendto(b"DISCOVER_SERVER", ('<broadcast>', port))
-        print("[DISCOVERY] Sent broadcast to discover server...")
-
-        response, server_address = udp.recvfrom(1024)
-        if response.decode() == "SERVER_HERE":
-            print(f"[DISCOVERY] Server found at {server_address[0]}")
-            return server_address[0]
-    except socket.timeout:
-        print("[ERROR] Server discovery timed out.")
-    finally:
-        udp.close()
-    return None
-
+   ip = input("Enter server IP address: ")
+   
+   if not ip:
+       print("[ERROR] No IP address provided.")
+       return None
+   return ip
 
 def start_client():
     server_ip = discover_server()

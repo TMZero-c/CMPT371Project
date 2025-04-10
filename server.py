@@ -441,6 +441,7 @@ def start_voting_sequence():
     return chosen_client  # returns client obj
 
 
+
 def server_command_listener():
     while True:
         cmd = input(">> ").strip().lower()
@@ -483,27 +484,16 @@ def server_command_listener():
         else:
             print("[SERVER] Unknown command. Type 'help' for options.")
 
-def start_discovery_responder(port=5555):
-    udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    udp.bind(('', port))
-    print("[DISCOVERY] Ready to respond to broadcast...")
-
-    while True:
-        msg, addr = udp.recvfrom(1024)
-        if msg == b"DISCOVER_SERVER":
-            print(f"[DISCOVERY] Ping from {addr}, responding...")
-            udp.sendto(b"SERVER_HERE", addr)
 
 
 def start_server():
+    print("clients use this to join: " + socket.gethostbyname(socket.gethostname()))
+
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(('', 5555))
     server.listen()
     print("[SERVER STARTED] Listening on port 5555...")
     
-    # fucky wucky
-    threading.Thread(target=start_discovery_responder, daemon=True).start()
 
     # Start the game state listener in a separate thread
     threading.Thread(target=game_state_listener, daemon=True).start()
