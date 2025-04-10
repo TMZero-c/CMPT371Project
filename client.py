@@ -41,8 +41,13 @@ def handle_server_messages(sock):
             break
 
 def main():
+    ip_address = input("Enter server IP address: ")
+    if not ip_address:
+        print("No IP address provided. Exiting...")
+        exit(69)
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect(('localhost', 5555))
+    sock.connect((ip_address, 5555))
 
     name = input("Enter your name: ")
     sock.send(create_message("JOIN_ROOM", player_name=name))
@@ -71,6 +76,8 @@ def main():
             break
 
     sock.close()
+
+
 
 if __name__ == "__main__":
     main()

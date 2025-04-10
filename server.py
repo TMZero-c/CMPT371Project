@@ -131,6 +131,8 @@ class GameServer:
         # TODO: Start chatroom and voting flow here
 
     def run(self):
+        print("clients use this to join: " + socket.gethostbyname(socket.gethostname()))
+
         print(f"Server listening on {self.host}:{self.port}")
         try:
             while True:
