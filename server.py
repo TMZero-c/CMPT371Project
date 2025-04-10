@@ -31,7 +31,7 @@ def parse_message(data):
         return None
 
 class GameServer:
-    def __init__(self, host='', port=5555, max_players=2):
+    def __init__(self, host='', port=5555, max_players=3):
         self.host = host
         self.port = port
         self.max_players = max_players
