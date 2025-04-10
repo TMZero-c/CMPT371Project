@@ -1,5 +1,5 @@
 # PyQt-based GUI client for the social deduction game
-import sys
+import sys # ehehehehheh
 import socket
 import threading
 import json
