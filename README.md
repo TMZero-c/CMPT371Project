@@ -1,7 +1,7 @@
 # Blend In
 
 ## DESCRIPTION
-Blend In is a real-time multiplayer social deduction game inspired by Among Us. In this game, players are randomly assigned a role, and must go through a series of timed discussions to identify who is secretly the Imposter.
+Blend In is a real-time multiplayer social deduction game inspired by Among Us. In this game, players are randomly assigned a role, and must go through a series of timed discussions in shared but limited chat rooms to identify who is secretly the Imposter, then a vote is called and the most majority gets eliminated.
 
 ## HOW DOES IT WORK? 
 - server starts and clients conect
@@ -17,7 +17,8 @@ Blend In is a real-time multiplayer social deduction game inspired by Among Us. 
 
 
 ## TO PLAY
-- Someone starts the server
-- Players starting 'clients.py' will be asked for IP and Name
+- INSTALL `pyqt5` with `pip install pyqt5`
+- Someone starts the server with `server.py`
+- Players starting `clients.py` will be asked for IP and Name
 - The game starts when all clients have pressed ready
 
