@@ -1,4 +1,3 @@
-# Merged version of client.py with support for room selection and in-game help
 import socket
 import threading
 import json
@@ -15,7 +14,7 @@ def create_message(message_type, **kwargs):
 def parse_message(data):
     try:
         return json.loads(data.decode())
-    except:
+    except Exception as e:
         return None
 
 def handle_server_messages(sock):
@@ -31,7 +30,7 @@ def handle_server_messages(sock):
 
             msg_type = msg["type"]
 
-            if msg_type in ["ROOM_JOINED", "ASSIGN_ROLE", "GAME_STARTED",
+            if msg_type in ["LOBBY_JOINED", "ROOM_JOINED", "ASSIGN_ROLE", "GAME_STARTED",
                             "MAIN_ROOM", "VOTE_RESULT", "END_GAME", "INFO"]:
                 print(msg.get("message") or msg)
             elif msg_type == "PONG":
@@ -43,9 +42,10 @@ def handle_server_messages(sock):
 def print_help():
     print("\nAvailable commands:")
     print("  ready              - Mark yourself as ready")
-    print("  chat <message>     - Send a chat message to your room")
-    print("  vote <name>        - Vote for a player (during voting)")
+    print("  chat <message>     - Send a chat message to your current room/lobby")
+    print("  vote <name/room>   - Vote for a player (during voting) or for a room (in lobby/game)")
     print("  join <room_num>    - Join a specific room (after game starts)")
+    print("  lobby              - Return to the lobby")
     print("  ping               - Ping the server")
     print("  help               - Show this help message")
     print("  exit               - Disconnect and exit\n")
@@ -60,6 +60,7 @@ def main():
     sock.connect((ip_address, 5555))
 
     name = input("Enter your name: ")
+    # Join the lobby automatically upon connection
     sock.send(create_message("JOIN_ROOM", player_name=name))
 
     threading.Thread(target=handle_server_messages, args=(sock,), daemon=True).start()
@@ -71,13 +72,17 @@ def main():
                 sock.send(create_message("READY"))
             elif cmd.startswith("chat "):
                 msg = cmd[5:]
+                # “current” means whichever room or lobby the client is in.
                 sock.send(create_message("CHAT", message=msg, room_id="current"))
             elif cmd.startswith("join"):
+                # join <room_num> command used during the game to select a specific numeric room
                 value = cmd.split(" ", 1)[1]
                 if value.isdigit():
                     sock.send(create_message("JOIN_SPECIFIC_ROOM", room_id=int(value)))
                 else:
                     sock.send(create_message("VOTE", target=value))
+            elif cmd == "lobby":
+                sock.send(create_message("JOIN_LOBBY"))
             elif cmd == "ping":
                 sock.send(create_message("PING"))
             elif cmd == "help":
