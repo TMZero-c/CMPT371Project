@@ -1,7 +1,13 @@
-# Merged version of client.py with support for room selection and in-game help
+# PyQt-based GUI client for the social deduction game
+import sys
 import socket
 import threading
 import json
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
+    QInputDialog
+)
+from PyQt5.QtCore import pyqtSignal, QObject
 
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
@@ -18,79 +24,146 @@ def parse_message(data):
     except:
         return None
 
-def handle_server_messages(sock):
-    while True:
-        try:
-            data = sock.recv(1024)
-            if not data:
-                print("Disconnected from server.")
+class Communicator(QObject):
+    message_received = pyqtSignal(str)
+
+class GameClient(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-family: Consolas;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #333;
+                color: white;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+            QLineEdit, QTextEdit {
+                background-color: #2a2a2a;
+                color: #e0e0e0;
+                border: 1px solid #555;
+                border-radius: 4px;
+            }
+        """)
+        self.setWindowTitle("Blend In")
+
+        self.sock = None
+        self.comm = Communicator()
+        self.comm.message_received.connect(self.display_message)
+
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+
+        self.input_line = QLineEdit()
+        self.input_line.returnPressed.connect(self.send_input)
+
+        self.send_button = QPushButton("Send")
+        self.send_button.clicked.connect(self.send_input)
+
+        self.ready_button = QPushButton("Ready")
+        self.ready_button.clicked.connect(lambda: self.send_command("READY"))
+
+        self.help_button = QPushButton("Help")
+        self.help_button.clicked.connect(self.show_help)
+
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Game Chat"))
+        layout.addWidget(self.chat_display)
+        layout.addWidget(QLabel("Your Input"))
+        layout.addWidget(self.input_line)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.send_button)
+        btn_layout.addWidget(self.ready_button)
+        btn_layout.addWidget(self.help_button)
+        layout.addLayout(btn_layout)
+
+        self.setLayout(layout)
+        self.init_connection()
+
+    def init_connection(self):
+        ip_address, ok = QInputDialog.getText(self, "Connect to Server", "Enter server IP:")
+        if not ok or not ip_address:
+            QMessageBox.critical(self, "Connection Error", "No IP provided.")
+            sys.exit(1)
+
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((ip_address, 5555))
+
+        name, ok = QInputDialog.getText(self, "Enter Name", "Your name:")
+        if not ok or not name:
+            QMessageBox.critical(self, "Name Error", "No name provided.")
+            sys.exit(1)
+
+        self.sock.send(create_message("JOIN_ROOM", player_name=name))
+        threading.Thread(target=self.handle_server_messages, daemon=True).start()
+
+    def handle_server_messages(self):
+        while True:
+            try:
+                data = self.sock.recv(1024)
+                if not data:
+                    self.comm.message_received.emit("[Disconnected from server]")
+                    break
+                msg = parse_message(data)
+                if msg:
+                    display_text = msg.get("message") or json.dumps(msg)
+                    self.comm.message_received.emit(display_text)
+            except:
                 break
-            msg = parse_message(data)
-            if not msg:
-                continue
 
-            msg_type = msg["type"]
+    def send_input(self):
+        text = self.input_line.text().strip()
+        if not text:
+            return
 
-            if msg_type in ["ROOM_JOINED", "ASSIGN_ROLE", "GAME_STARTED",
-                            "MAIN_ROOM", "VOTE_RESULT", "END_GAME", "INFO"]:
-                print(msg.get("message") or msg)
-            elif msg_type == "PONG":
-                print("✅ Server responded with PONG")
-        except Exception as e:
-            print("Error receiving message:", e)
-            break
-
-def print_help():
-    print("\nAvailable commands:")
-    print("  ready              - Mark yourself as ready")
-    print("  chat <message>     - Send a chat message to your room")
-    print("  vote <name>        - Vote for a player (during voting)")
-    print("  join <room_num>    - Join a specific room (after game starts)")
-    print("  ping               - Ping the server")
-    print("  help               - Show this help message")
-    print("  exit               - Disconnect and exit\n")
-
-def main():
-    ip_address = input("Enter server IP address: ")
-    if not ip_address:
-        print("No IP address provided. Exiting...")
-        exit(69)
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip_address, 5555))
-
-    name = input("Enter your name: ")
-    sock.send(create_message("JOIN_ROOM", player_name=name))
-
-    threading.Thread(target=handle_server_messages, args=(sock,), daemon=True).start()
-
-    while True:
-        try:
-            cmd = input("> ").strip()
-            if cmd == "ready":
-                sock.send(create_message("READY"))
-            elif cmd.startswith("chat "):
-                msg = cmd[5:]
-                sock.send(create_message("CHAT", message=msg, room_id="current"))
-            elif cmd.startswith("join"):
-                value = cmd.split(" ", 1)[1]
-                if value.isdigit():
-                    sock.send(create_message("JOIN_SPECIFIC_ROOM", room_id=int(value)))
-                else:
-                    sock.send(create_message("VOTE", target=value))
-            elif cmd == "ping":
-                sock.send(create_message("PING"))
-            elif cmd == "help":
-                print_help()
-            elif cmd == "exit":
-                print("Exiting...")
-                break
+        if text.startswith("chat "):
+            self.sock.send(create_message("CHAT", message=text[5:], room_id="current"))
+        elif text.startswith("vote "):
+            value = text.split(" ", 1)[1]
+            if value.isdigit():
+                self.sock.send(create_message("JOIN_SPECIFIC_ROOM", room_id=int(value)))
             else:
-                print("Unknown command. Type 'help' for options.")
-        except KeyboardInterrupt:
-            break
+                self.sock.send(create_message("VOTE", target=value))
+        elif text == "ping":
+            self.sock.send(create_message("PING"))
+        elif text == "exit":
+            self.sock.close()
+            self.close()
+        else:
+            self.display_message("Unknown command. Type 'help' for options.")
 
-    sock.close()
+        self.input_line.clear()
+
+    def send_command(self, cmd):
+        if cmd == "READY":
+            self.sock.send(create_message("READY"))
+
+    def show_help(self):
+        help_text = (
+            "Available commands:\n"
+            "  chat <message>     - Send a chat message to your room\n"
+            "  vote <name>        - Vote for a player (during voting)\n"
+            "  vote <room_num>    - Join a specific room (after game starts)\n"
+            "  ping               - Ping the server\n"
+            "  exit               - Disconnect and exit\n"
+        )
+        QMessageBox.information(self, "Help", help_text)
+
+    def display_message(self, text):
+        self.chat_display.append(text)
 
 if __name__ == "__main__":
-    main()
+    app = QApplication(sys.argv)
+    window = GameClient()
+    window.resize(600, 400)
+    window.show()
+    sys.exit(app.exec_())
