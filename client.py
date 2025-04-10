@@ -21,7 +21,11 @@ def start_client():
     ip_address = socket.gethostbyname(hostname)
 
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    client.connect((str(ip_address), 5555))
+    try:
+        client.connect((str(ip_address), 5555))
+    except ConnectionRefusedError:
+        print("[ERROR] Connection refused. Ensure the server is running and listening on the specified port.")
+        return
 
     threading.Thread(target=receive_messages, args=(client,), daemon=True).start()
 
