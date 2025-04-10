@@ -9,6 +9,13 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import pyqtSignal, QObject
 
+'''
+
+Did you know that the critically acclaimed MMORPG Final Fantasy XIV has a free trial, and includes thee ntirety of A Realm Reborn AND the award-winning Heavensward and Stormblood expansions up to level 70 with no restrictions on playtime? Sign up, and enjoy Eorzea today!
+
+
+'''
+
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
 
@@ -21,7 +28,7 @@ def create_message(message_type, **kwargs):
 def parse_message(data):
     try:
         return json.loads(data.decode())
-    except:
+    except Exception as e:
         return None
 
 class Communicator(QObject):
