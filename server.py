@@ -31,6 +31,7 @@ def parse_message(data):
         return None
 
 class GameServer:
+    def __init__(self, host='localhost', port=5555, max_players=3):
     def __init__(self, host='', port=5555, max_players=2):
         self.host = host
         self.port = port
@@ -41,10 +42,14 @@ class GameServer:
         self.topics = {}
         self.ready_players = set()
         self.votes = {}
+        self.chat_rooms = {}  # player_name -> room_id
         self.lock = threading.Lock()
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen()
+        self.private_phase_active = False
+        self.room_map = {}  # room_id -> list of (socket, player_name)
+        self.voting_enabled = False
         self.socket_to_player = {}  # conn -> player_name
         self.player_to_socket = {}  # player_name -> conn
 
@@ -55,6 +60,13 @@ class GameServer:
                     sock.send(message)
                 except:
                     pass
+
+    def send_to_room(self, room_id, message):
+        for sock, _ in self.room_map.get(room_id, []):
+            try:
+                sock.send(message)
+            except:
+                pass
 
     def handle_client(self, conn, addr):
         player_name = None
@@ -91,13 +103,29 @@ class GameServer:
                             threading.Thread(target=self.start_game, daemon=True).start()
 
                 elif msg_type == "VOTE":
-                    # TODO: handle vote tallying logic
-                    self.broadcast(create_message("INFO", message=f"{player_name} voted."))
-                    # TODO: Send raw vote message to handle game flow
+                    with self.lock:
+                        if not self.voting_enabled:
+                            conn.send(create_message("INFO", message="Voting not allowed yet."))
+                            continue
+                        voter = player_name
+                        target = message["target"]
+                        self.votes[voter] = target
+                        self.broadcast(create_message("INFO", message=f"{voter} voted."))
+                        if len(self.votes) == len(self.players):
+                            threading.Thread(target=self.tally_votes, daemon=True).start()
 
                 elif msg_type == "CHAT":
                     msg = message["message"]
-                    self.broadcast(create_message("INFO", message=f"{player_name}: {msg}"))
+                    if self.private_phase_active:
+                        room_id = self.chat_rooms.get(player_name)
+                        if room_id and room_id in self.room_map:
+                            for sock, pname in self.room_map[room_id]:
+                                try:
+                                    sock.send(create_message("INFO", message=f"{player_name}: {msg}"))
+                                except:
+                                    pass
+                    else:
+                        self.broadcast(create_message("INFO", message=f"{player_name}: {msg}"))
 
                 elif msg_type == "PING":
                     conn.send(create_message("PONG"))
@@ -117,6 +145,7 @@ class GameServer:
 
     def start_game(self):
         print("Game starting!")
+        self.voting_enabled = False
         topic = random.choice(TOPICS)
         impostor = random.choice(self.players)
         for i, name in enumerate(self.players):
@@ -128,7 +157,64 @@ class GameServer:
             sock.send(create_message("ASSIGN_ROLE", role=role, topic=assigned_topic))
 
         self.broadcast(create_message("GAME_STARTED", players=self.players))
-        # TODO: Start chatroom and voting flow here
+        self.assign_chat_rooms()
+        threading.Thread(target=self.run_chat_phase, daemon=True).start()
+
+    def assign_chat_rooms(self):
+        if len(self.players) == 2:
+            room_id = "A"
+            self.room_map[room_id] = [(self.player_to_socket[p], p) for p in self.players]
+            for p in self.players:
+                self.chat_rooms[p] = room_id
+        else:
+            room_ids = ["A", "B"]
+            shuffled = self.players[:]
+            random.shuffle(shuffled)
+            half = len(shuffled) // 2
+            group_a = shuffled[:half]
+            group_b = shuffled[half:]
+            if len(group_a) == 1:
+                group_a.append(group_b.pop())
+            for group, room_id in zip([group_a, group_b], room_ids):
+                self.room_map[room_id] = [(self.player_to_socket[p], p) for p in group]
+                for p in group:
+                    self.chat_rooms[p] = room_id
+
+    def run_chat_phase(self):
+        print("Chat phase begins")
+        self.private_phase_active = True
+        for player, room_id in self.chat_rooms.items():
+            sock = self.player_to_socket[player]
+            sock.send(create_message("INFO", message=f"You are now in private room {room_id}. Discuss your topic!"))
+        time.sleep(15)
+        self.private_phase_active = False
+        self.chat_rooms.clear()
+        self.room_map.clear()
+        self.broadcast(create_message("MAIN_ROOM"))
+        time.sleep(1)
+        self.voting_enabled = True
+        self.broadcast(create_message("INFO", message="You may now vote using the vote <name> command."))
+
+    def tally_votes(self):
+        print("Tallying votes...")
+        counts = {}
+        for target in self.votes.values():
+            counts[target] = counts.get(target, 0) + 1
+        eliminated = max(counts, key=counts.get)
+        self.broadcast(create_message("VOTE_RESULT", eliminated=eliminated))
+
+        if self.roles[eliminated] == "impostor":
+            self.broadcast(create_message("END_GAME", winner="Crewmates"))
+        elif len(self.players) - 1 <= 1:
+            self.broadcast(create_message("END_GAME", winner="Impostor"))
+        else:
+            self.players.remove(eliminated)
+            self.sockets = [self.player_to_socket[p] for p in self.players]
+            self.ready_players.clear()
+            self.votes.clear()
+            self.voting_enabled = False
+            self.assign_chat_rooms()
+            threading.Thread(target=self.run_chat_phase, daemon=True).start()
 
     def run(self):
         print("clients use this to join: " + socket.gethostbyname(socket.gethostname()))
@@ -146,3 +232,6 @@ class GameServer:
 
 if __name__ == "__main__":
     GameServer().run()
+
+
+
