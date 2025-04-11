@@ -123,7 +123,14 @@ class GameClient(QWidget):
                 msg = parse_message(data)
                 if msg:
                     msg_type = msg.get("type")
-                    if msg_type == "JOIN_LOBBY":
+                    if msg_type == "ASSIGN_ROLE":
+                        role = msg.get("role")
+                        topic = msg.get("topic")
+                        if role == "impostor":
+                            self.comm.message_received.emit("You are the impostor!")
+                        elif role == "crewmate":
+                            self.comm.message_received.emit(f"You are a crewmate. Topic: {topic}")
+                    elif msg_type == "JOIN_LOBBY":
                         self.comm.message_received.emit("You have been moved back to the lobby.")
                     else:
                         display_text = msg.get("message") or json.dumps(msg)

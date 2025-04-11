@@ -21,7 +21,7 @@ game_stage = 0
 DISCUSSION_TIME = 30  # seconds
 votes = {}  # player_name -> vote_target
 round_active = False
-
+game_running = False  # Tracks whether a game is currently running
 
 lock = threading.Lock()
 ready_lock = threading.Lock()
@@ -109,12 +109,19 @@ def handle_client(conn, addr):
                     conn.send(create_message("LOBBY_JOINED", message="You have rejoined the lobby."))
 
             elif msg_type == "READY":
+                global game_running
                 with ready_lock:
+                    if game_running:  # If a game is already running, ignore the READY action
+                        conn.send(create_message("INFO", message="The game is already running."))
+                        return
+
                     ready_clients.add(conn)
                     broadcast(create_message("INFO", message=f"{clients[conn]} is ready."))
+
                     # Start the game if all clients are ready
                     if len(ready_clients) == len(clients):
                         threading.Thread(target=start_game, daemon=True).start()
+                        
 
             elif msg_type == "JOIN":
                 # Handle joining a specific room
@@ -169,13 +176,22 @@ def handle_client(conn, addr):
         conn.close()
 
 def start_game():
-    global impostor_for_game, game_stage
+    global impostor_for_game, game_stage, game_running
     game_stage = 1
     print("[GAME] Starting")
-    topic = random.choice(topicList)
-    impostor_for_game = random.choice(list(clients.keys()))
 
+    # Select a random topic and impostor
+    topic = random.choice(topicList)
+    if game_running == True:
+        pass  # Game is already running, do not change impostor
+    elif game_running == False:
+        impostor_for_game = random.choice(list(clients.keys()))
+        game_running = True  # Set the flag to indicate the game is running
+
+    # Assign roles to all players
     broadcast_except_one(topic, impostor_for_game)
+
+    # Notify all players that the game has started
     broadcast(create_message("GAME_STARTED", players=list(clients.values())))
 
     # Ask each player to choose a room number
@@ -190,7 +206,7 @@ def start_game():
     end_room_phase()
 
 def check_game_end(eliminated_name):
-    global impostor_for_game
+    global impostor_for_game, game_running
 
     if eliminated_name:
         # Remove eliminated player
@@ -205,12 +221,13 @@ def check_game_end(eliminated_name):
 
     if eliminated_name and clients.get(impostor_for_game) == eliminated_name:
         broadcast(create_message("END_GAME", winner="crewmates"))
+        game_running = False  # Reset the flag when the game ends
     elif len(clients) <= 2:
         broadcast(create_message("END_GAME", winner="impostor"))
+        game_running = False  # Reset the flag when the game ends
     else:
         time.sleep(2)
         start_game()  # Start new round
-
 
 def end_room_phase():
     global rooms, clients_room_ids, round_active
@@ -257,13 +274,23 @@ def collect_votes():
 
 def broadcast_except_one(common_msg, impostor):
     impostor_name = clients.get(impostor)  # Get the impostor's name
+    if not impostor_name:
+        print("[ERROR] Impostor not found in clients.")
+        return
+
+    print(f"[DEBUG] Clients: {clients}")
+    print(f"[DEBUG] Impostor: {impostor}, Impostor Name: {impostor_name}")
+
     for client, player_name in list(clients.items()):
         try:
-            if player_name == impostor_name:  # Compare by player name
+            if client == impostor:  # Compare by socket object
                 client.send(create_message("ASSIGN_ROLE", role="impostor", topic="(none)"))
+                print(f"[ROLE ASSIGNMENT] {player_name} is the impostor.")
             else:
                 client.send(create_message("ASSIGN_ROLE", role="crewmate", topic=common_msg))
-        except:
+                print(f"[ROLE ASSIGNMENT] {player_name} is a crewmate.")
+        except Exception as e:
+            print(f"[ERROR] Failed to send role to {player_name}: {e}")
             client.close()
             clients.pop(client, None)
 
