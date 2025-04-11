@@ -158,6 +158,19 @@ def handle_client(conn, addr):
             elif msg_type == "PING":
                 conn.send(create_message("PONG"))
 
+            elif msg_type == "VOTE":
+                with lock:
+                    voter = clients.get(conn)
+                    if voter in votes:
+                        conn.send(create_message("INFO", message="You have already voted."))
+                    else:
+                        target = message.get("target")
+                        if target in clients.values():
+                            votes[voter] = target
+                            conn.send(create_message("INFO", message=f"You voted for {target}."))
+                        else:
+                            conn.send(create_message("INFO", message="Invalid vote target."))
+
     except Exception as e:
         print(f"[ERROR] {e}")
     finally:
@@ -253,24 +266,37 @@ def end_room_phase():
 
 def collect_votes():
     global votes
-    votes = {}
-    broadcast(create_message("INFO", message="Please vote for who you think is the impostor."))
-    
-    # Wait 20 seconds for votes
-    time.sleep(20)
+    votes = {}  # Reset votes at the start of the round
+    broadcast(create_message("INFO", message="Please vote for who you think is the impostor. Use the command: vote <player_name>"))
 
+    # Wait for votes for a fixed duration
+    start_time = time.time()
+    VOTING_DURATION = 20  # seconds
+    while time.time() - start_time < VOTING_DURATION:
+        time.sleep(1)  # Check periodically for votes
+
+    # Count votes
     vote_counts = {}
     for target in votes.values():
         vote_counts[target] = vote_counts.get(target, 0) + 1
 
+    # Debugging: Print who voted for whom
+    print("[DEBUG] Votes received:")
+    for voter, target in votes.items():
+        print(f"  {voter} voted for {target}")
+
     if not vote_counts:
         broadcast(create_message("INFO", message="No votes cast. Nobody is eliminated."))
+        print("[DEBUG] No votes were cast.")
         check_game_end(None)
-        return
+    else:
+        eliminated = max(vote_counts.items(), key=lambda x: x[1])[0]
+        broadcast(create_message("VOTE_RESULT", voted_out=eliminated))
+        print(f"[DEBUG] {eliminated} has been voted out.")
+        check_game_end(eliminated)
 
-    eliminated = max(vote_counts.items(), key=lambda x: x[1])[0]
-    broadcast(create_message("VOTE_RESULT", voted_out=eliminated))
-    check_game_end(eliminated)
+    # Clean up voting resources
+    votes.clear()
 
 def broadcast_except_one(common_msg, impostor):
     impostor_name = clients.get(impostor)  # Get the impostor's name

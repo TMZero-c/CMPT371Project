@@ -130,6 +130,9 @@ class GameClient(QWidget):
                             self.comm.message_received.emit("You are the impostor!")
                         elif role == "crewmate":
                             self.comm.message_received.emit(f"You are a crewmate. Topic: {topic}")
+                    elif msg_type == "VOTE_RESULT":
+                        voted_out = msg.get("voted_out")
+                        self.comm.message_received.emit(f"{voted_out} has been eliminated.")
                     elif msg_type == "JOIN_LOBBY":
                         self.comm.message_received.emit("You have been moved back to the lobby.")
                     else:
@@ -151,6 +154,9 @@ class GameClient(QWidget):
                 self.sock.send(create_message("JOIN", room_id=int(value)))
             else:
                 self.display_message("Invalid room number. Use: join <room_number>")
+        elif text.startswith("vote "):  # New command for voting
+            target = text.split(" ", 1)[1]
+            self.sock.send(create_message("VOTE", target=target))
         elif text == "ping":
             self.sock.send(create_message("PING"))
         elif text == "exit":
