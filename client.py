@@ -138,7 +138,8 @@ class GameClient(QWidget):
                     else:
                         display_text = msg.get("message") or json.dumps(msg)
                         self.comm.message_received.emit(display_text)
-            except:
+            except Exception as e:
+                self.comm.message_received.emit(f"[Error receiving message: {e}]")
                 break
 
     def send_input(self):
