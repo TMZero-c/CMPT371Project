@@ -1,34 +1,26 @@
-# PyQt-based GUI client for the social deduction game
-import sys # ehehehehheh
+import sys
 import socket
 import threading
 import json
 from PyQt5.QtWidgets import (
-    QApplication, QWidget, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox,
-    QInputDialog
+    QApplication, QWidget, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox, QInputDialog
 )
 from PyQt5.QtCore import pyqtSignal, QObject
-
-'''
-
-Did you know that the critically acclaimed MMORPG Final Fantasy XIV has a free trial, and includes the entirety of A Realm Reborn AND the award-winning Heavensward and Stormblood expansions up to level 70 with no restrictions on playtime? Sign up, and enjoy Eorzea today!
-
-
-'''
 
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
 
 def create_message(message_type, **kwargs):
+    """Creates a JSON message with a newline delimiter for framing."""
     message = {"type": message_type}
     for field in MESSAGE_TYPES[message_type]["fields"]:
         message[field] = kwargs.get(field)
-    return json.dumps(message).encode()
+    return (json.dumps(message) + "\n").encode()
 
 def parse_message(data):
     try:
         return json.loads(data.decode())
-    except Exception as e:
+    except Exception:
         return None
 
 class Communicator(QObject):
@@ -61,38 +53,29 @@ class GameClient(QWidget):
             }
         """)
         self.setWindowTitle("Blend In")
-
         self.sock = None
         self.comm = Communicator()
         self.comm.message_received.connect(self.display_message)
-
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
-
         self.input_line = QLineEdit()
         self.input_line.returnPressed.connect(self.send_input)
-
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self.send_input)
-
         self.ready_button = QPushButton("Ready")
         self.ready_button.clicked.connect(lambda: self.send_command("READY"))
-
         self.help_button = QPushButton("Help")
         self.help_button.clicked.connect(self.show_help)
-
         layout = QVBoxLayout()
         layout.addWidget(QLabel("Game Chat"))
         layout.addWidget(self.chat_display)
         layout.addWidget(QLabel("Your Input"))
         layout.addWidget(self.input_line)
-
         btn_layout = QHBoxLayout()
         btn_layout.addWidget(self.send_button)
         btn_layout.addWidget(self.ready_button)
         btn_layout.addWidget(self.help_button)
         layout.addLayout(btn_layout)
-
         self.setLayout(layout)
         self.init_connection()
 
@@ -101,43 +84,46 @@ class GameClient(QWidget):
         if not ok or not ip_address:
             QMessageBox.critical(self, "Connection Error", "No IP provided.")
             sys.exit(1)
-
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((ip_address, 5555))
-
         name, ok = QInputDialog.getText(self, "Enter Name", "Your name:")
         if not ok or not name:
             QMessageBox.critical(self, "Name Error", "No name provided.")
             sys.exit(1)
-
         self.sock.send(create_message("JOIN_ROOM", player_name=name))
         threading.Thread(target=self.handle_server_messages, daemon=True).start()
 
     def handle_server_messages(self):
+        buffer = ""
         while True:
             try:
                 data = self.sock.recv(1024)
                 if not data:
                     self.comm.message_received.emit("[Disconnected from server]")
                     break
-                msg = parse_message(data)
-                if msg:
-                    msg_type = msg.get("type")
-                    if msg_type == "ASSIGN_ROLE":
-                        role = msg.get("role")
-                        topic = msg.get("topic")
-                        if role == "impostor":
-                            self.comm.message_received.emit("You are the impostor!")
-                        elif role == "crewmate":
-                            self.comm.message_received.emit(f"You are a crewmate. Topic: {topic}")
-                    elif msg_type == "VOTE_RESULT":
-                        voted_out = msg.get("voted_out")
-                        self.comm.message_received.emit(f"{voted_out} has been eliminated.")
-                    elif msg_type == "JOIN_LOBBY":
-                        self.comm.message_received.emit("You have been moved back to the lobby.")
-                    else:
-                        display_text = msg.get("message") or json.dumps(msg)
-                        self.comm.message_received.emit(display_text)
+                buffer += data.decode()
+                # Process complete messages delimited by newline.
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    if line.strip():
+                        msg = parse_message(line.encode())
+                        if msg:
+                            msg_type = msg.get("type")
+                            if msg_type == "ASSIGN_ROLE":
+                                role = msg.get("role")
+                                topic = msg.get("topic")
+                                if role == "impostor":
+                                    self.comm.message_received.emit("You are the impostor!")
+                                elif role == "crewmate":
+                                    self.comm.message_received.emit(f"You are a crewmate. Topic: {topic}")
+                            elif msg_type == "VOTE_RESULT":
+                                voted_out = msg.get("voted_out")
+                                self.comm.message_received.emit(f"{voted_out} has been eliminated.")
+                            elif msg_type == "JOIN_LOBBY":
+                                self.comm.message_received.emit("You have been moved back to the lobby.")
+                            else:
+                                display_text = msg.get("message") or json.dumps(msg)
+                                self.comm.message_received.emit(display_text)
             except Exception as e:
                 self.comm.message_received.emit(f"[Error receiving message: {e}]")
                 break
@@ -146,16 +132,15 @@ class GameClient(QWidget):
         text = self.input_line.text().strip()
         if not text:
             return
-
         if text.startswith("chat "):
             self.sock.send(create_message("CHAT", message=text[5:], room_id="current"))
-        elif text.startswith("join "):  # Updated command for joining rooms
+        elif text.startswith("join "):
             value = text.split(" ", 1)[1]
             if value.isdigit():
                 self.sock.send(create_message("JOIN", room_id=int(value)))
             else:
                 self.display_message("Invalid room number. Use: join <room_number>")
-        elif text.startswith("vote "):  # New command for voting
+        elif text.startswith("vote "):
             target = text.split(" ", 1)[1]
             self.sock.send(create_message("VOTE", target=target))
         elif text == "ping":
@@ -165,7 +150,6 @@ class GameClient(QWidget):
             self.close()
         else:
             self.display_message("Unknown command. Type 'help' for options.")
-
         self.input_line.clear()
 
     def send_command(self, cmd):
@@ -178,6 +162,7 @@ class GameClient(QWidget):
             "Available commands:\n"
             "  chat <message>     - Send a chat message to your room\n"
             "  join <room_num>    - Join a specific room\n"
+            "  vote <player_name> - Vote for a player\n"
             "  ready              - Mark yourself as ready\n"
             "  ping               - Ping the server\n"
             "  exit               - Disconnect and exit\n"
