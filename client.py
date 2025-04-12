@@ -1,108 +1,180 @@
+import sys
 import socket
 import threading
 import json
-
-'''
-
-Did you know that the critically acclaimed MMORPG Final Fantasy XIV has a free trial, and includes thee ntirety of A Realm Reborn AND the award-winning Heavensward and Stormblood expansions up to level 70 with no restrictions on playtime? Sign up, and enjoy Eorzea today!
-
-
-'''
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QTextEdit, QLineEdit, QPushButton, QVBoxLayout, QLabel, QHBoxLayout, QMessageBox, QInputDialog
+)
+from PyQt5.QtCore import pyqtSignal, QObject
 
 with open("message_protocol.json", "r") as f:
     MESSAGE_TYPES = json.load(f)
 
 def create_message(message_type, **kwargs):
+    """Creates a JSON message with a newline delimiter for framing."""
     message = {"type": message_type}
     for field in MESSAGE_TYPES[message_type]["fields"]:
         message[field] = kwargs.get(field)
-    return json.dumps(message).encode()
+    return (json.dumps(message) + "\n").encode()
 
 def parse_message(data):
     try:
         return json.loads(data.decode())
-    except Exception as e:
+    except Exception:
         return None
 
-def handle_server_messages(sock):
-    while True:
-        try:
-            data = sock.recv(1024)
-            if not data:
-                print("Disconnected from server.")
+class Communicator(QObject):
+    message_received = pyqtSignal(str)
+
+class GameClient(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setStyleSheet("""
+            QWidget {
+                background-color: #1e1e1e;
+                color: #ffffff;
+                font-family: Consolas;
+                font-size: 14px;
+            }
+            QPushButton {
+                background-color: #333;
+                color: white;
+                border-radius: 5px;
+                padding: 5px;
+            }
+            QPushButton:hover {
+                background-color: #444;
+            }
+            QLineEdit, QTextEdit {
+                background-color: #2a2a2a;
+                color: #e0e0e0;
+                border: 1px solid #555;
+                border-radius: 4px;
+            }
+        """)
+        self.setWindowTitle("Blend In")
+        self.sock = None
+        self.comm = Communicator()
+        self.comm.message_received.connect(self.display_message)
+        self.chat_display = QTextEdit()
+        self.chat_display.setReadOnly(True)
+        self.input_line = QLineEdit()
+        self.input_line.returnPressed.connect(self.send_input)
+        self.send_button = QPushButton("Send")
+        self.send_button.clicked.connect(self.send_input)
+        self.ready_button = QPushButton("Ready")
+        self.ready_button.clicked.connect(lambda: self.send_command("READY"))
+        self.help_button = QPushButton("Help")
+        self.help_button.clicked.connect(self.show_help)
+        layout = QVBoxLayout()
+        layout.addWidget(QLabel("Game Chat"))
+        layout.addWidget(self.chat_display)
+        layout.addWidget(QLabel("Your Input"))
+        layout.addWidget(self.input_line)
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.send_button)
+        btn_layout.addWidget(self.ready_button)
+        btn_layout.addWidget(self.help_button)
+        layout.addLayout(btn_layout)
+        self.setLayout(layout)
+        self.init_connection()
+
+    def init_connection(self):
+        ip_address, ok = QInputDialog.getText(self, "Connect to Server", "Enter server IP:")
+        if not ok or not ip_address:
+            QMessageBox.critical(self, "Connection Error", "No IP provided.")
+            sys.exit(1)
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((ip_address, 5555))
+        name, ok = QInputDialog.getText(self, "Enter Name", "Your name:")
+        if not ok or not name:
+            QMessageBox.critical(self, "Name Error", "No name provided.")
+            sys.exit(1)
+        self.sock.send(create_message("JOIN_ROOM", player_name=name))
+        threading.Thread(target=self.handle_server_messages, daemon=True).start()
+
+    def handle_server_messages(self):
+        buffer = ""
+        while True:
+            try:
+                data = self.sock.recv(1024)
+                if not data:
+                    self.comm.message_received.emit("[Disconnected from server]")
+                    break
+                buffer += data.decode()
+                # Process complete messages delimited by newline.
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    if line.strip():
+                        msg = parse_message(line.encode())
+                        if msg:
+                            msg_type = msg.get("type")
+                            if msg_type == "ASSIGN_ROLE":
+                                role = msg.get("role")
+                                topic = msg.get("topic")
+                                if role == "impostor":
+                                    self.comm.message_received.emit("You are the impostor!")
+                                elif role == "crewmate":
+                                    self.comm.message_received.emit(f"You are a crewmate. Topic: {topic}")
+                            elif msg_type == "VOTE_RESULT":
+                                voted_out = msg.get("voted_out")
+                                self.comm.message_received.emit(f"{voted_out} has been eliminated.")
+                            elif msg_type == "JOIN_LOBBY":
+                                self.comm.message_received.emit("You have been moved back to the lobby.")
+                            else:
+                                display_text = msg.get("message") or json.dumps(msg)
+                                self.comm.message_received.emit(display_text)
+            except Exception as e:
+                self.comm.message_received.emit(f"[Error receiving message: {e}]")
                 break
-            msg = parse_message(data)
-            if not msg:
-                continue
 
-            msg_type = msg["type"]
-
-            if msg_type in ["LOBBY_JOINED", "ROOM_JOINED", "ASSIGN_ROLE", "GAME_STARTED",
-                            "MAIN_ROOM", "VOTE_RESULT", "END_GAME", "INFO"]:
-                print(msg.get("message") or msg)
-            elif msg_type == "PONG":
-                print("✅ Server responded with PONG")
-        except Exception as e:
-            print("Error receiving message:", e)
-            break
-
-def print_help():
-    print("\nAvailable commands:")
-    print("  ready              - Mark yourself as ready")
-    print("  chat <message>     - Send a chat message to your current room/lobby")
-    print("  vote <name/room>   - Vote for a player (during voting) or for a room (in lobby/game)")
-    print("  join <room_num>    - Join a specific room (after game starts)")
-    print("  lobby              - Return to the lobby")
-    print("  ping               - Ping the server")
-    print("  help               - Show this help message")
-    print("  exit               - Disconnect and exit\n")
-
-def main():
-    ip_address = input("Enter server IP address: ")
-    if not ip_address:
-        print("No IP address provided. Exiting...")
-        exit(69)
-
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.connect((ip_address, 5555))
-
-    name = input("Enter your name: ")
-    # Join the lobby automatically upon connection
-    sock.send(create_message("JOIN_ROOM", player_name=name))
-
-    threading.Thread(target=handle_server_messages, args=(sock,), daemon=True).start()
-
-    while True:
-        try:
-            cmd = input("> ").strip()
-            if cmd == "ready":
-                sock.send(create_message("READY"))
-            elif cmd.startswith("chat "):
-                msg = cmd[5:]
-                # “current” means whichever room or lobby the client is in.
-                sock.send(create_message("CHAT", message=msg, room_id="current"))
-            elif cmd.startswith("join"):
-                # join <room_num> command used during the game to select a specific numeric room
-                value = cmd.split(" ", 1)[1]
-                if value.isdigit():
-                    sock.send(create_message("JOIN_SPECIFIC_ROOM", room_id=int(value)))
-                else:
-                    sock.send(create_message("VOTE", target=value))
-            elif cmd == "lobby":
-                sock.send(create_message("JOIN_LOBBY"))
-            elif cmd == "ping":
-                sock.send(create_message("PING"))
-            elif cmd == "help":
-                print_help()
-            elif cmd == "exit":
-                print("Exiting...")
-                break
+    def send_input(self):
+        text = self.input_line.text().strip()
+        if not text:
+            return
+        if text.startswith("chat "):
+            self.sock.send(create_message("CHAT", message=text[5:], room_id="current"))
+        elif text.startswith("join "):
+            value = text.split(" ", 1)[1]
+            if value.isdigit():
+                self.sock.send(create_message("JOIN", room_id=int(value)))
             else:
-                print("Unknown command. Type 'help' for options.")
-        except KeyboardInterrupt:
-            break
+                self.display_message("Invalid room number. Use: join <room_number>")
+        elif text.startswith("vote "):
+            target = text.split(" ", 1)[1]
+            self.sock.send(create_message("VOTE", target=target))
+        elif text == "ping":
+            self.sock.send(create_message("PING"))
+        elif text == "exit":
+            self.sock.close()
+            self.close()
+        else:
+            self.display_message("Unknown command. Type 'help' for options.")
+        self.input_line.clear()
 
-    sock.close()
+    def send_command(self, cmd):
+        if cmd == "READY":
+            self.sock.send(create_message("READY"))
+            self.display_message("You are now marked as ready.")
+
+    def show_help(self):
+        help_text = (
+            "Available commands:\n"
+            "  chat <message>     - Send a chat message to your room\n"
+            "  join <room_num>    - Join a specific room\n"
+            "  vote <player_name> - Vote for a player\n"
+            "  ready              - Mark yourself as ready\n"
+            "  ping               - Ping the server\n"
+            "  exit               - Disconnect and exit\n"
+        )
+        QMessageBox.information(self, "Help", help_text)
+
+    def display_message(self, text):
+        self.chat_display.append(text)
 
 if __name__ == "__main__":
-    main()
+    app = QApplication(sys.argv)
+    window = GameClient()
+    window.resize(600, 400)
+    window.show()
+    sys.exit(app.exec_())
